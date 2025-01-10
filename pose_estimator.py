@@ -22,9 +22,9 @@ def get_device() -> str:
     return device
 
 def initialize_pose_model(
-        model_name: str,
-        device: str = None
-        ) -> Tuple[VitPoseForPoseEstimation, AutoProcessor, torch.device]:
+    model_name: str,
+    device: str = None
+) -> Tuple[VitPoseForPoseEstimation, AutoProcessor, torch.device]:
     """Initialize pose estimation model and processor.
     
     Args:
@@ -43,112 +43,229 @@ def initialize_pose_model(
     model.eval()
     return model, processor, device
 
-def normalize_coordinates(
-        coords: List[float], 
-        width: int, 
-        height: int
-        ) -> List[float]:
-    """Convert relative coordinates to absolute pixels."""
-    return [
-        coords[0] * width,  
-        coords[1] * height,
-        coords[2] * width,  
-        coords[3] * height
-    ]
+def convert_to_absolute_bbox(
+    bbox: List[float], 
+    width: int, 
+    height: int
+) -> List[List[float]]:
+    """Convert normalized bounding box coordinates to absolute pixel values.
+    
+    Args:
+        bbox: Normalized coordinates [x1, y1, x2, y2] between 0 and 1
+        width: Image width in pixels
+        height: Image height in pixels
+    
+    Returns:
+        List containing absolute coordinate bbox in format [[x1, y1, x2, y2]]
+    """
+    return [[
+        bbox[0] * width,    # x1 to absolute
+        bbox[1] * height,   # y1 to absolute
+        bbox[2] * width,    # x2 to absolute
+        bbox[3] * height    # y2 to absolute
+    ]]
+
 def get_pose_prediction(
-        image: Image.Image,
-        bbox: List[float],
-        model: VitPoseForPoseEstimation,
-        processor: AutoProcessor,
-        device: torch.device
-        ) -> Dict[str, torch.Tensor]:
-    """Run pose estimation inference."""
-    inputs = processor(image, boxes=[bbox], return_tensors="pt").to(device)
+    image: Image.Image,
+    absolute_bbox: List[List[float]],
+    model: AutoProcessor,
+    image_processor: VitPoseForPoseEstimation,
+    device: torch.device
+) -> Dict[str, torch.Tensor]:
+    """Run pose estimation model inference on a single detection.
+    
+    Args:
+        image: PIL Image object
+        absolute_bbox: Bounding box in absolute coordinates [[x1, y1, x2, y2]]
+        model: Pose estimation model
+        image_processor: Image processor for model input preparation
+        device: Torch device (CPU/GPU)
+    
+    Returns:
+        Raw model output dictionary containing pose estimation results
+    """
+    # Prepare image and bbox for model input
+    model_inputs = image_processor(
+        image, 
+        boxes=[absolute_bbox], 
+        return_tensors="pt"
+    ).to(device)
+    
+    # Run inference without gradient calculation
     with torch.no_grad():
-        return model(**inputs)
+        model_outputs = model(**model_inputs)
+    
+    return model_outputs
 
-def process_detection(
-        image: Image.Image,
-        detection: fo.Detection,
-        dims: Tuple[int, int],
-        model: VitPoseForPoseEstimation,
-        processor: AutoProcessor,
-        device: torch.device,
-        conf_threshold: float
-        ) -> List[Dict[str, torch.Tensor]]:
-    """Process single detection through pose estimation."""
-    width, height = dims
-    bbox = [normalize_coordinates(detection.bounding_box, width, height)]
-    outputs = get_pose_prediction(image, bbox, model, processor, device)
-    return processor.post_process_pose_estimation(
-        outputs, boxes=[bbox], threshold=conf_threshold
+def process_single_detection(
+    image: Image.Image,
+    person_detection: fo.Detection,
+    image_width: int,
+    image_height: int,
+    model: VitPoseForPoseEstimation,
+    image_processor: AutoProcessor,
+    device: torch.device,
+    confidence_threshold: float
+) -> List[Dict[str, torch.Tensor]]:
+    """Process a single person detection through the pose estimation pipeline.
+    
+    Args:
+        image: PIL Image object
+        person_detection: FiftyOne Detection object containing bbox
+        image_width: Image width in pixels
+        image_height: Image height in pixels
+        model: Pose estimation model
+        image_processor: Image processor for model input preparation
+        device: Torch device (CPU/GPU)
+        confidence_threshold: Minimum confidence score for keypoint detection
+    
+    Returns:
+        Processed pose estimation results containing keypoint coordinates and scores
+    """
+    # Convert detection bbox to absolute coordinates
+    absolute_bbox = convert_to_absolute_bbox(
+        person_detection.bounding_box, 
+        image_width, 
+        image_height
     )
+    
+    # Get model predictions
+    model_outputs = get_pose_prediction(
+        image, 
+        absolute_bbox, 
+        model, 
+        image_processor, 
+        device
+    )
+    
+    # Post-process model outputs to get keypoint data
+    processed_pose = image_processor.post_process_pose_estimation(
+        model_outputs, 
+        boxes=[absolute_bbox],
+        threshold=confidence_threshold
+    )
+    
+    return processed_pose
 
-def create_keypoint(
-        coords: Tuple[float, float], 
-        score: float, 
-        label: str
-        ) -> fo.Keypoint:
-    """Create a FiftyOne Keypoint object."""
+def create_keypoint_object(
+    point_coordinates: Tuple[float, float], 
+    confidence_score: float, 
+    keypoint_label: str
+) -> fo.Keypoint:
+    """Create a single FiftyOne Keypoint object with normalized coordinates.
+    
+    Args:
+        point_coordinates: Tuple of (x, y) normalized coordinates
+        confidence_score: Detection confidence for this keypoint
+        keypoint_label: String label identifying the keypoint type
+    
+    Returns:
+        FiftyOne Keypoint object
+    """
     return fo.Keypoint(
-        label=label,
-        confidence=[score],
-        points=[coords]
+        label=keypoint_label,
+        confidence=[confidence_score],
+        points=[point_coordinates],
+        skeleton=vitpose_skeleton
     )
 
-def process_pose_results(
-        pose_data: Dict[str, torch.Tensor],
-        dims: Tuple[int, int],
-        label_map: Dict[int, str]
-        ) -> List[fo.Keypoint]:
-    """Convert pose results to FiftyOne keypoints."""
-    width, height = dims
-    keypoints = []
-    data = pose_data[0][0]
+def create_keypoints_from_pose(
+    pose_result: List[Dict[str, torch.Tensor]],
+    image_width: int,
+    image_height: int,
+    model_label_map: Dict[int, str]
+) -> List[fo.Keypoint]:
+    """Convert pose estimation results to FiftyOne keypoint objects.
     
-    coords = [(x/width, y/height) for x, y in data['keypoints'].tolist()]
-    scores = data['scores'].tolist()
-    labels = [label_map[idx] for idx in data['labels'].tolist()]
+    Args:
+        pose_result: Processed pose estimation results
+        image_width: Image width for coordinate normalization
+        image_height: Image height for coordinate normalization
+        model_label_map: Dictionary mapping keypoint indices to label names
     
-    for coord, score, label in zip(coords, scores, labels):
-        keypoints.append(create_keypoint(coord, score, label))
+    Returns:
+        List of FiftyOne Keypoint objects
+    """
+    keypoints_list = []
+    pose_data = pose_result[0][0]  # Extract single pose data
     
-    return keypoints
+    # Convert tensor data to Python lists and normalize coordinates
+    normalized_coordinates = [
+        ((x/image_width), (y/image_height)) 
+        for x, y in pose_data['keypoints'].tolist()
+    ]
+    confidence_scores = pose_data['scores'].tolist()
+    keypoint_labels = [
+        model_label_map[label_idx] 
+        for label_idx in pose_data['labels'].tolist()
+    ]
+    
+    # Create individual keypoint objects for each detected point
+    for coordinates, score, label in zip(
+        normalized_coordinates, 
+        confidence_scores, 
+        keypoint_labels
+    ):
+        keypoint = create_keypoint_object(coordinates, score, label)
+        keypoints_list.append(keypoint)
+    
+    return keypoints_list
 
 def run_pose_estimation(
-        dataset: fo.Dataset,
-        pose_field: str,
-        model_name: str,
-        device: str = None,
-        conf_threshold: float = 0.35
-        ) -> None:
-    """Process dataset to add pose keypoints.
+    dataset: fo.Dataset,
+    model_name: str,
+    pose_field: str,
+    bbox_detections:str, 
+    device: str = None,
+    confidence_threshold: float = 0.35
+) -> None:
+    """Process entire dataset to add pose keypoints to each sample.
     
     Args:
         dataset: FiftyOne dataset containing images and person detections
-        pose_field: Field name to store pose keypoints
         model_name: HuggingFace model identifier
+        pose_field: The field you want to store detections in
+        bbox_detections: the field containing the bounding boxe
+        image_processor: Image processor for model input preparation
         device: Optional device override
-        conf_threshold: Minimum confidence score for keypoint detection
+        confidence_threshold: Minimum confidence score for keypoint detection
     """
     model, processor, device = initialize_pose_model(model_name, device)
-    
+
     for sample in dataset.iter_samples():
+        # Load sample image and metadata
         image = Image.open(sample.filepath)
-        dims = (sample.metadata.width, sample.metadata.height)
+        image_width = sample.get_field("metadata.width")
+        image_height = sample.get_field("metadata.height")
+        person_detections = sample.get_field(f"{bbox_detections}.detections")
         
+        # Process all person detections in the sample
         all_keypoints = []
-        for detection in sample.bbox_detections.detections:
-            pose_result = process_detection(
-                image, detection, dims, model, processor, 
-                device, conf_threshold
+        for person_detection in person_detections:
+            # Get pose estimation results for single person
+            pose_result = process_single_detection(
+                image=image,
+                person_detection=person_detection,
+                image_width=image_width,
+                image_height=image_height,
+                model=model,
+                image_processor=processor,
+                device=device,
+                confidence_threshold=confidence_threshold
             )
-            person_keypoints = process_pose_results(
-                pose_result, dims, model.config.id2label
+            
+            # Convert pose results to keypoint objects
+            person_keypoints = create_keypoints_from_pose(
+                pose_result=pose_result,
+                image_width=image_width,
+                image_height=image_height,
+                model_label_map=model.config.id2label
             )
             all_keypoints.extend(person_keypoints)
         
+        # Update sample with all detected keypoints
         sample[pose_field] = fo.Keypoints(keypoints=all_keypoints)
         sample.save()
     
+    # Ensure dataset is updated
     dataset.reload()
