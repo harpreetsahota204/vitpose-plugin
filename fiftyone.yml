@@ -1,4 +1,4 @@
-name: "@harpreetsahota/hiera_embeddings"
+name: "@harpreetsahota/vitpose"
 description: Run ViTPose Models from Hugging Face on your FiftyOne Dataset
 version: 1.0.0
 fiftyone:
