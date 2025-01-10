@@ -60,6 +60,7 @@ def get_pose_estimation(
     image: Image.Image,
     bbox: List[List[float]],
     image_processor: AutoProcessor,
+    model_name: str,
     model: VitPoseForPoseEstimation,
     device: str,
     confidence_threshold: float
@@ -78,7 +79,13 @@ def get_pose_estimation(
         List: Processed pose estimation results containing keypoints and their scores
     """
     inputs = image_processor(image, boxes=[bbox], return_tensors="pt").to(device)
-    
+
+    # Handle MOE experts specifically for vitpose-plus-base checkpoint
+    if model_name == "usyd-community/vitpose-plus-base":
+        dataset_index = torch.tensor([0] * len(inputs["pixel_values"]))
+        dataset_index = dataset_index.to(inputs["pixel_values"].device)
+        inputs["dataset_index"] = dataset_index
+        
     with torch.no_grad():
         results = model(**inputs)
     
