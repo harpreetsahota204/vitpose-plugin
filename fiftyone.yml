@@ -1,0 +1,9 @@
+name: "@harpreetsahota/hiera_embeddings"
+description: Run ViTPose Models from Hugging Face on your FiftyOne Dataset
+version: 1.0.0
+fiftyone:
+  version: "*"
+url: https://github.com/harpreetsahota204/vitpose-plugin
+license: Apache 2.0
+operators:
+  - vitpose_keypoint_estimator
