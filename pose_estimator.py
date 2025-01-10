@@ -4,23 +4,6 @@ import fiftyone as fo
 import torch
 from transformers import AutoProcessor, VitPoseForPoseEstimation
 
-def init_model(model_name: str) -> Tuple[AutoProcessor, VitPoseForPoseEstimation, str]:
-    """Initialize the image processor and model.
-    
-    Args:
-        model_name (str): Name or path of the pretrained model
-        
-    Returns:
-        Tuple[AutoProcessor, VitPoseForPoseEstimation, str]: A tuple containing:
-            - image_processor: The initialized image processor
-            - model: The initialized pose estimation model
-            - device: The device identifier ('cuda', 'mps', or 'cpu')
-    """
-    device = get_device()
-    image_processor = AutoProcessor.from_pretrained(model_name)
-    model = VitPoseForPoseEstimation.from_pretrained(model_name, device_map=device)
-    return image_processor, model, device
-
 def get_device() -> str:
     """Helper function to determine the best available device.
     
@@ -37,6 +20,23 @@ def get_device() -> str:
         device = "cpu"
         print("Using CPU device")
     return device
+
+def init_model(model_name: str) -> Tuple[AutoProcessor, VitPoseForPoseEstimation, str]:
+    """Initialize the image processor and model.
+    
+    Args:
+        model_name (str): Name or path of the pretrained model
+        
+    Returns:
+        Tuple[AutoProcessor, VitPoseForPoseEstimation, str]: A tuple containing:
+            - image_processor: The initialized image processor
+            - model: The initialized pose estimation model
+            - device: The device identifier ('cuda', 'mps', or 'cpu')
+    """
+    device = get_device()
+    image_processor = AutoProcessor.from_pretrained(model_name)
+    model = VitPoseForPoseEstimation.from_pretrained(model_name, device_map=device)
+    return image_processor, model, device
 
 def normalize_bbox_coordinates(bbox: List[float], width: int, height: int) -> List[List[float]]:
     """Convert normalized bounding box coordinates to absolute coordinates.
