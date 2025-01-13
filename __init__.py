@@ -49,7 +49,7 @@ class ViTPoseEstimator(foo.Operator):
             # A description for the operator
             description="Estimate keypoints for human pose estimation with VitPose",
 
-            icon="/assets/icons8-meta.svg",
+            icon="/assets/yoga-position-svgrepo-com.svg",
 
             )
 
