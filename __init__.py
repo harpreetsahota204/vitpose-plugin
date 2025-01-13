@@ -80,7 +80,7 @@ class ViTPoseEstimator(foo.Operator):
             "bbox_field",            
             required=True,
             description=(
-                "Name of the field to store the Keypoints in."
+                "Name of the field where your bounding box detections are stored."
                 " NOTE: This model assumes your dataset already has bounding box detections."
                 )
             )
