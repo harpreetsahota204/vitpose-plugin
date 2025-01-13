@@ -5,10 +5,13 @@ import fiftyone.operators as foo
 from fiftyone.operators import types
 
 VITPOSE_ARCHS = {
-    "vitpose-base":"usyd-community/vitpose-base",
-    "vitpose-plus-base":"usyd-community/vitpose-plus-base",
-    "vitpose-base-simple":"usyd-community/vitpose-base-simple",
-    "vitpose-base-coco-aic-mpii":"usyd-community/vitpose-base-coco-aic-mpii"
+    "vitpose-base": "usyd-community/vitpose-base",
+    "vitpose-plus-small": "usyd-community/vitpose-plus-small",
+    "vitpose-plus-base": "usyd-community/vitpose-plus-base",
+    "vitpose-plus-large": "usyd-community/vitpose-plus-large",
+    "vitpose-plus-huge": "usyd-community/vitpose-plus-huge",
+    "vitpose-base-simple": "usyd-community/vitpose-base-simple",
+    "vitpose-base-coco-aic-mpii": "usyd-community/vitpose-base-coco-aic-mpii"
 }
 
 with add_sys_path(os.path.dirname(os.path.abspath(__file__))):
@@ -79,6 +82,7 @@ class ViTPoseEstimator(foo.Operator):
         inputs.str(
             "bbox_field",            
             required=True,
+            label="Bounding Box Field",
             description=(
                 "Name of the field where your bounding box detections are stored."
                 " NOTE: This model assumes your dataset already has bounding box detections."
@@ -88,6 +92,7 @@ class ViTPoseEstimator(foo.Operator):
         inputs.str(
             "output_field",            
             required=True,
+            label="Output Field",
             description="Name of the field to store the Keypoints in."
             )
         
