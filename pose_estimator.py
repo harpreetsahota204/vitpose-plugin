@@ -57,27 +57,27 @@ def normalize_bbox_coordinates(bbox: List[float], width: int, height: int) -> Li
     ]]
 
 def get_pose_estimation(
-    image: Image.Image,
-    bbox: List[List[float]],
-    image_processor: AutoProcessor,
-    model_name: str,
-    model: VitPoseForPoseEstimation,
-    device: str,
-    confidence_threshold: float
-) -> List:
+        image: Image.Image,
+        bbox: List[List[float]],
+        image_processor: AutoProcessor,
+        model_name: str,
+        model: VitPoseForPoseEstimation,
+        confidence_threshold: float
+        ) -> List:
     """Get pose estimation results for a single detection.
     
     Args:
         image (Image.Image): Input image
         bbox (List[List[float]]): Bounding box coordinates in format [[x1, y1, x2, y2]]
         image_processor (AutoProcessor): The initialized image processor
+        model_name(str): Name of the model which is being used
         model (VitPoseForPoseEstimation): The pose estimation model
-        device (str): Device to run inference on ('cuda', 'mps', or 'cpu')
         confidence_threshold (float): Minimum confidence threshold for keypoint detection
         
     Returns:
         List: Processed pose estimation results containing keypoints and their scores
     """
+    device = model.device.type
     inputs = image_processor(image, boxes=[bbox], return_tensors="pt").to(device)
 
     # Handle MOE experts specifically for vitpose-plus-base checkpoint
@@ -85,7 +85,7 @@ def get_pose_estimation(
         dataset_index = torch.tensor([0] * len(inputs["pixel_values"]))
         dataset_index = dataset_index.to(inputs["pixel_values"].device)
         inputs["dataset_index"] = dataset_index
-        
+
     with torch.no_grad():
         results = model(**inputs)
     
@@ -96,11 +96,11 @@ def get_pose_estimation(
     )
 
 def process_keypoints(
-    pose_data: List,
-    width: int,
-    height: int,
-    model_config: Dict
-) -> List[fo.Keypoint]:
+        pose_data: List,
+        width: int,
+        height: int,
+        model_config: Dict
+        ) -> List[fo.Keypoint]:
     """Process keypoints for a single person.
     
     Args:
@@ -131,19 +131,20 @@ def process_keypoints(
     return keypoints
 
 def process_sample(
-    sample: fo.Sample,
-    image_processor: AutoProcessor,
-    model: VitPoseForPoseEstimation,
-    device: str,
-    bbox_field: str,
-    output_field: str,
-    confidence_threshold: float
-) -> None:
+        sample: fo.Sample,
+        image_processor: AutoProcessor,
+        model_name: str, 
+        model: VitPoseForPoseEstimation,
+        bbox_field: str,
+        output_field: str,
+        confidence_threshold: float
+        ) -> None:
     """Process a single sample from the dataset.
     
     Args:
         sample (fo.Sample): The FiftyOne sample to process
         image_processor (AutoProcessor): The initialized image processor
+        model_name(str): Name of the model which is being used
         model (VitPoseForPoseEstimation): The pose estimation model
         device (str): Device to run inference on ('cuda', 'mps', or 'cpu')
         bbox_field (str): Field name containing bounding box detections
@@ -164,7 +165,16 @@ def process_sample(
     # Process each detected person
     for person in detected_people:
         abs_bbox = normalize_bbox_coordinates(person.bounding_box, width, height)
-        pose_results = get_pose_estimation(image, abs_bbox, image_processor, model, device, confidence_threshold)
+
+        pose_results = get_pose_estimation(
+            image=image, 
+            bbox=abs_bbox, 
+            image_processor=image_processor, 
+            model_name=model_name, 
+            model=model, 
+            confidence_threshold=confidence_threshold
+            )
+        
         model_results.append(pose_results)
     
     # Process results for all people
@@ -177,25 +187,30 @@ def process_sample(
     sample.save()
 
 def run_pose_estimation(
-    dataset: fo.Dataset,
-    model_name: str,
-    bbox_field: str,
-    output_field: str,
-    confidence_threshold: float = 0.35
-) -> None:
+        dataset: fo.Dataset,
+        model_name: str,
+        bbox_field: str,
+        output_field: str,
+        confidence_threshold: float
+        ) -> None:
     """Process all samples in the dataset.
-    
     Args:
         dataset (fo.Dataset): The FiftyOne dataset to process
         model_name (str): Name or path of the pretrained model
         bbox_field (str): Field name containing bounding box detections
         output_field (str): Field name to save the keypoints to
         confidence_threshold (float, optional): Confidence threshold for keypoint detection.
-            Defaults to 0.35
-            
     Returns:
         None: Results are saved directly to the dataset samples
     """
-    image_processor, model, device = init_model(model_name)
+    image_processor, model, _ = init_model(model_name)
+    
     for sample in dataset.iter_samples():
-        process_sample(sample, image_processor, model, device, bbox_field, output_field, confidence_threshold)
+        process_sample(sample, 
+                       image_processor=image_processor, 
+                       model=model, 
+                       model_name=model_name,
+                       bbox_field=bbox_field,
+                       output_field=output_field,
+                       confidence_threshold=confidence_threshold
+                       )
