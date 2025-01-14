@@ -99,7 +99,7 @@ Once the plugin has been installed, you can instantiate the operator as follows:
 ```python
 import fiftyone.operators as foo
 
-vitpose_operator = foo.get_operator("harpreetsahota/vitpose-plugin/vitpose_keypoint_estimator")
+vitpose_operator = foo.get_operator("@harpreetsahota/vitpose/vitpose_keypoint_estimator")
 
 ```
 You can then estimate poses on your dataset by running the operator with your desired parameters:
@@ -108,7 +108,7 @@ You can then estimate poses on your dataset by running the operator with your de
 # Run the operator on your dataset
 vitpose_operator(
     dataset,
-    model_name="vitpose-plus-small",  # Select from one of the supported models
+    model_name="usyd-community/vitpose-plus-small",  # Select from one of the supported models
     bbox_field="bbox_field", # Name of the field where your bounding box detections are stored.
     output_field="vitpose_estimates",  # Name of the field to store the Keypoints in.
     confidence_threshold= 0.55 #Confidence threshold for keypoint detection
@@ -120,7 +120,7 @@ If you're running in a notebook, it's recommended to launch a [Delegated operati
 ```python
 await vitpose_operator(
     dataset,
-    model_name="vitpose-plus-small",
+    model_name="usyd-community/vitpose-plus-small",
     bbox_field="bbox_field", 
     output_field="vitpose_estimates",
     confidence_threshold= 0.55
