@@ -1,5 +1,5 @@
 import os
-
+import fiftyone as fo
 from fiftyone.core.utils import add_sys_path
 import fiftyone.operators as foo
 from fiftyone.operators import types
@@ -154,6 +154,29 @@ class ViTPoseEstimator(foo.Operator):
             output_field = output_field,
             confidence_threshold = confidence_threshold
             )
+        
+        keypoint_labels = [
+            "nose", "left_eye", "right_eye", "left_ear", "right_ear",
+            "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
+            "left_wrist", "right_wrist", "left_hip", "right_hip",
+            "left_knee", "right_knee", "left_ankle", "right_ankle"
+        ]
+        
+        # Define skeleton edges
+        edges = [
+            [0, 1], [0, 2], [1, 3], [2, 4],  # Face
+            [5, 7], [7, 9], [6, 8], [8, 10],  # Arms
+            [5, 6], [5, 11], [6, 12], [11, 12],  # Torso
+            [11, 13], [13, 15], [12, 14], [14, 16]  # Legs
+        ]
+
+        skeleton = fo.KeypointSkeleton(labels=keypoint_labels, edges=edges)
+
+        view.skeletons = {
+            output_field: skeleton,
+            }
+
+
         
         ctx.ops.reload_dataset()
 

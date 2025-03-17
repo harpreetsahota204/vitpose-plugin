@@ -79,12 +79,8 @@ def get_pose_estimation(
     """
     device = model.device.type
     inputs = image_processor(image, boxes=[bbox], return_tensors="pt").to(device)
-
-    # Handle MOE experts specifically for vitpose-plus-base checkpoint
-    if model_name == "usyd-community/vitpose-plus-base":
-        dataset_index = torch.tensor([0] * len(inputs["pixel_values"]))
-        dataset_index = dataset_index.to(inputs["pixel_values"].device)
-        inputs["dataset_index"] = dataset_index
+    
+    inputs["dataset_index"] = torch.tensor([0], device=device)
 
     with torch.no_grad():
         results = model(**inputs)
@@ -110,25 +106,22 @@ def process_keypoints(
         model_config (Dict): Model configuration containing label mappings
         
     Returns:
-        List[fo.Keypoint]: List of FiftyOne Keypoint objects containing normalized coordinates,
-            confidence scores, and labels
+        fo.Keypoint: FiftyOne Keypoint object containing all joints for a person
     """
-    keypoints = []
     pose = pose_data[0][0]
     
-    normalized_points = [((x/width), (y/height)) for x, y in pose['keypoints'].tolist()]
+    # Get all points and normalize to [0,1] range
+    normalized_points = [(x/width, y/height) for x, y in pose['keypoints'].tolist()]
     scores = pose['scores'].tolist()
-    labels = [model_config.id2label[lab] for lab in pose['labels'].tolist()]
     
-    for point, score, label in zip(normalized_points, scores, labels):
-        keypoint = fo.Keypoint(
-            label=label,
-            confidence=[score],
-            points=[point]
-        )
-        keypoints.append(keypoint)
+    # Create a single keypoint object for the person with all joint points
+    person_keypoint = fo.Keypoint(
+        label="person",
+        points=normalized_points,
+        confidence=scores,  # Store confidence for each joint
+    )
     
-    return keypoints
+    return person_keypoint
 
 def process_sample(
         sample: fo.Sample,
@@ -146,7 +139,6 @@ def process_sample(
         image_processor (AutoProcessor): The initialized image processor
         model_name(str): Name of the model which is being used
         model (VitPoseForPoseEstimation): The pose estimation model
-        device (str): Device to run inference on ('cuda', 'mps', or 'cpu')
         bbox_field (str): Field name containing bounding box detections
         output_field (str): Field name to save the keypoints to
         confidence_threshold (float): Confidence threshold for keypoint detection
@@ -160,7 +152,7 @@ def process_sample(
     detected_people = sample.get_field(f"{bbox_field}.detections")
     
     model_results = []
-    sample_keypoints = []
+    person_keypoints = []
     
     # Process each detected person
     for person in detected_people:
@@ -179,11 +171,14 @@ def process_sample(
     
     # Process results for all people
     for pose_data in model_results:
-        keypoints = process_keypoints(pose_data, width, height, model.config)
-        sample_keypoints.extend(keypoints)
+        keypoint = process_keypoints(pose_data, width, height, model.config)
+        person_keypoints.append(keypoint)
+    
+    # Create the keypoints collection with the skeleton
+    keypoints_collection = fo.Keypoints(keypoints=person_keypoints)
     
     # Save results
-    sample[output_field] = fo.Keypoints(keypoints=sample_keypoints)
+    sample[output_field] = keypoints_collection
     sample.save()
 
 def run_pose_estimation(
